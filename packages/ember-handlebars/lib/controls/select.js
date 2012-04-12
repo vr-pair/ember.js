@@ -1,7 +1,11 @@
 /*jshint eqeqeq:false */
 
-var set = Ember.set, get = Ember.get;
-var indexOf = Ember.EnumerableUtils.indexOf, indexesOf = Ember.EnumerableUtils.indexesOf;
+var set = Ember.set,
+    get = Ember.get,
+    indexOf = Ember.EnumerableUtils.indexOf,
+    indexesOf = Ember.EnumerableUtils.indexesOf,
+    replace = Ember.EnumerableUtils.replace,
+    isArray = Ember.isArray;
 
 /**
   @class
@@ -188,11 +192,18 @@ Ember.Select = Ember.View.extend(
     }
   },
 
+  // We have to observe selection and selection.@each because SelectOption has
+  // an attribute binding on selection that observes the select's selected
+  // property.  Ultimately this results in removeAttr being called for
+  // 'selected' on the option which in jQuery 1.6.4 will reset the select's
+  // selectedIndex property to -1.
+  //
+  // Observing selection as well as selection.@each works only because the
+  // former happens to be called after removeAttr.
   selectionDidChange: Ember.observer(function() {
-    var selection = get(this, 'selection'),
-        isArray = Ember.isArray(selection);
+    var selection = get(this, 'selection');
     if (get(this, 'multiple')) {
-      if (!isArray) {
+      if (!isArray(selection)) {
         set(this, 'selection', Ember.A([selection]));
         return;
       }
@@ -200,7 +211,7 @@ Ember.Select = Ember.View.extend(
     } else {
       this._selectionDidChangeSingle();
     }
-  }, 'selection'),
+  }, 'selection', 'selection.@each'),
 
   valueDidChange: Ember.observer(function() {
     var content = get(this, 'content'),
@@ -245,14 +256,21 @@ Ember.Select = Ember.View.extend(
     var options = this.$('option:selected'),
         prompt = get(this, 'prompt'),
         offset = prompt ? 1 : 0,
-        content = get(this, 'content');
+        content = get(this, 'content'),
+        selection = get(this, 'selection');
 
     if (!content){ return; }
     if (options) {
       var selectedIndexes = options.map(function(){
         return this.index - offset;
       }).toArray();
-      set(this, 'selection', content.objectsAt(selectedIndexes));
+      var newSelection = content.objectsAt(selectedIndexes);
+
+      if (isArray(selection)) {
+        replace(selection, 0, get(selection, 'length'), newSelection);
+      } else {
+        set(this, 'selection', newSelection);
+      }
     }
   },
 
@@ -264,7 +282,6 @@ Ember.Select = Ember.View.extend(
         selection = get(this, 'selection'),
         selectionIndex = content ? indexOf(content, selection) : -1,
         prompt = get(this, 'prompt');
-
     if (prompt) { selectionIndex += 1; }
     if (el) { el.selectedIndex = selectionIndex; }
   },
